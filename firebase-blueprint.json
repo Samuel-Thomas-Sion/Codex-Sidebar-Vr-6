@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "Birthday": {
+      "title": "Birthday",
+      "description": "User birthday record",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the birthday record"
+        },
+        "userId": {
+          "type": "string",
+          "description": "The user ID who created this record"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the person"
+        },
+        "month": {
+          "type": "number",
+          "description": "Month of the birthday"
+        },
+        "day": {
+          "type": "number",
+          "description": "Day of the birthday"
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional note"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when it was created"
+        }
+      },
+      "required": ["id", "userId", "name", "month", "day"]
+    }
+  },
+  "firestore": {
+    "/birthdays/{birthdayId}": {
+      "schema": "Birthday",
+      "description": "Global birthdays shared among users"
+    }
+  }
+}
