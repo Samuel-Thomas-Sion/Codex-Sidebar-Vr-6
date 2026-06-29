@@ -12989,6 +12989,12 @@ const Tf = "the-codex",
         profileUser: "Sweet_Devil095",
         badge: "Blogger",
       },
+      {
+        role: "Club Secretary",
+        user: "shaunak_likes_chess",
+        profileUser: "Shaunak_Likes_Chess",
+        badge: "Secretary",
+      },
     ],
     commandCore: [
       {
