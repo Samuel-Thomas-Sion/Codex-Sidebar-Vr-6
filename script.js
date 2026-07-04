@@ -14454,12 +14454,15 @@ function vm() {
 
       if (!currentUid) {
         try {
-          const result = await window.signInAnonymously(window.firebaseAuth);
-          const newUid = result.user.uid;
+          const provider = new window.GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: 'select_account' });
+          const googleResult = await window.signInWithPopup(window.firebaseAuth, provider);
+          const newUid = googleResult.user.uid;
           setCurrentUid(newUid);
           saveData(newUid);
         } catch (error) {
           console.error("Auth error", error);
+          alert("Authentication failed. Please allow popups for Google Sign-In.");
         }
       } else {
         saveData(currentUid);
@@ -14577,6 +14580,27 @@ function vm() {
                         s.jsx("span", {
                           className: "chip",
                           children: "Trial Ready",
+                        }),
+                      ],
+                    }),
+                  ],
+                }),
+              ],
+            }),
+            s.jsxs("section", {
+              className: "module",
+              children: [
+                s.jsxs("div", {
+                  className: "section-head",
+                  children: [
+                    s.jsxs("div", {
+                      children: [
+                        s.jsx("div", {
+                          className: "kicker",
+                          children: "Club Creation Date",
+                        }),
+                        s.jsx("h2", {
+                          children: "19-April-2026",
                         }),
                       ],
                     }),
