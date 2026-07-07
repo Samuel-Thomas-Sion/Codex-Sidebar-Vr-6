@@ -12650,6 +12650,288 @@ function dm() {
   return (A(), (bf.exports = sm()), bf.exports);
 }
 var om = dm();
+
+
+const TWO_PI = Math.PI * 2;
+
+const DotField = ml.memo(({
+  dotRadius = 1.5,
+  dotSpacing = 14,
+  cursorRadius = 500,
+  cursorForce = 0.1,
+  bulgeOnly = true,
+  bulgeStrength = 67,
+  glowRadius = 160,
+  sparkle = false,
+  waveAmplitude = 0,
+  gradientFrom = 'rgba(255, 34, 0, 0.55)',
+  gradientTo = 'rgba(255, 106, 26, 0.55)',
+  glowColor = '#120F17',
+  ...rest
+}) => {
+  const canvasRef = ml.useRef(null);
+  const svgRef = ml.useRef(null);
+  const glowRef = ml.useRef(null);
+  const dotsRef = ml.useRef([]);
+  const mouseRef = ml.useRef({ x: -9999, y: -9999, prevX: -9999, prevY: -9999, speed: 0 });
+  const rafRef = ml.useRef(null);
+  const sizeRef = ml.useRef({ w: 0, h: 0, offsetX: 0, offsetY: 0 });
+  const glowOpacity = ml.useRef(0);
+  const engagement = ml.useRef(0);
+  const propsRef = ml.useRef({});
+  propsRef.current = { dotRadius, dotSpacing, cursorRadius, cursorForce, bulgeOnly, bulgeStrength, sparkle, waveAmplitude, gradientFrom, gradientTo };
+  const rebuildRef = ml.useRef(null);
+  const glowIdRef = ml.useRef(`dot-field-glow-${Math.random().toString(36).slice(2, 9)}`);
+
+  ml.useEffect(() => {
+    const canvas = canvasRef.current;
+    const glowEl = glowRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d', { alpha: true });
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let resizeTimer;
+
+    function resize() {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(doResize, 100);
+    }
+
+    function doResize() {
+      if (!canvas.parentElement) return;
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      sizeRef.current = {
+        w,
+        h,
+        offsetX: rect.left + window.scrollX,
+        offsetY: rect.top + window.scrollY,
+      };
+
+      buildDots(w, h);
+    }
+
+    function buildDots(w, h) {
+      const p = propsRef.current;
+      const step = p.dotRadius + p.dotSpacing;
+      const cols = Math.floor(w / step);
+      const rows = Math.floor(h / step);
+      const padX = (w % step) / 2;
+      const padY = (h % step) / 2;
+      const dots = new Array(rows * cols);
+      let idx = 0;
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const ax = padX + col * step + step / 2;
+          const ay = padY + row * step + step / 2;
+          dots[idx++] = { ax, ay, sx: ax, sy: ay, vx: 0, vy: 0, x: ax, y: ay };
+        }
+      }
+      dotsRef.current = dots;
+    }
+
+    function onMouseMove(e) {
+      const s = sizeRef.current;
+      mouseRef.current.x = e.pageX - s.offsetX;
+      mouseRef.current.y = e.pageY - s.offsetY;
+    }
+
+    function updateMouseSpeed() {
+      const m = mouseRef.current;
+      const dx = m.prevX - m.x;
+      const dy = m.prevY - m.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      m.speed += (dist - m.speed) * 0.5;
+      if (m.speed < 0.001) m.speed = 0;
+      m.prevX = m.x;
+      m.prevY = m.y;
+    }
+
+    const speedInterval = setInterval(updateMouseSpeed, 20);
+
+    let frameCount = 0;
+
+    function tick() {
+      frameCount++;
+      const dots = dotsRef.current;
+      const m = mouseRef.current;
+      const { w, h } = sizeRef.current;
+      const p = propsRef.current;
+      const len = dots.length;
+      const t = frameCount * 0.02;
+
+      const targetEngagement = Math.min(m.speed / 5, 1);
+      engagement.current += (targetEngagement - engagement.current) * 0.06;
+      if (engagement.current < 0.001) engagement.current = 0;
+      const eng = engagement.current;
+
+      glowOpacity.current += (eng - glowOpacity.current) * 0.08;
+
+      if (glowEl) {
+        glowEl.setAttribute('cx', m.x);
+        glowEl.setAttribute('cy', m.y);
+        glowEl.style.opacity = glowOpacity.current;
+      }
+
+      ctx.clearRect(0, 0, w, h);
+
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, p.gradientFrom);
+      grad.addColorStop(1, p.gradientTo);
+      ctx.fillStyle = grad;
+
+      const cr = p.cursorRadius;
+      const crSq = cr * cr;
+      const rad = p.dotRadius / 2;
+      const isBulge = p.bulgeOnly;
+
+      ctx.beginPath();
+
+      for (let i = 0; i < len; i++) {
+        const d = dots[i];
+        const dx = m.x - d.ax;
+        const dy = m.y - d.ay;
+        const distSq = dx * dx + dy * dy;
+
+        if (distSq < crSq && eng > 0.01) {
+          const dist = Math.sqrt(distSq);
+          if (isBulge) {
+            const t = 1 - dist / cr;
+            const push = t * t * p.bulgeStrength * eng;
+            const angle = Math.atan2(dy, dx);
+            d.sx += (d.ax - Math.cos(angle) * push - d.sx) * 0.15;
+            d.sy += (d.ay - Math.sin(angle) * push - d.sy) * 0.15;
+          } else {
+            const angle = Math.atan2(dy, dx);
+            const move = (500 / dist) * (m.speed * p.cursorForce);
+            d.vx += Math.cos(angle) * -move;
+            d.vy += Math.sin(angle) * -move;
+          }
+        } else if (isBulge) {
+          d.sx += (d.ax - d.sx) * 0.1;
+          d.sy += (d.ay - d.sy) * 0.1;
+        }
+
+        if (!isBulge) {
+          d.vx *= 0.9;
+          d.vy *= 0.9;
+          d.x = d.ax + d.vx;
+          d.y = d.ay + d.vy;
+          d.sx += (d.x - d.sx) * 0.1;
+          d.sy += (d.y - d.sy) * 0.1;
+        }
+
+        let drawX = d.sx;
+        let drawY = d.sy;
+        if (p.waveAmplitude > 0) {
+          drawY += Math.sin(d.ax * 0.03 + t) * p.waveAmplitude;
+          drawX += Math.cos(d.ay * 0.03 + t * 0.7) * p.waveAmplitude * 0.5;
+        }
+
+        if (p.sparkle) {
+          const hash = ((i * 2654435761) ^ (frameCount >> 3)) >>> 0;
+          if ((hash % 100) < 3) {
+            ctx.moveTo(drawX + rad * 1.8, drawY);
+            ctx.arc(drawX, drawY, rad * 1.8, 0, TWO_PI);
+          } else {
+            ctx.moveTo(drawX + rad, drawY);
+            ctx.arc(drawX, drawY, rad, 0, TWO_PI);
+          }
+        } else {
+          ctx.moveTo(drawX + rad, drawY);
+          ctx.arc(drawX, drawY, rad, 0, TWO_PI);
+        }
+      }
+
+      ctx.fill();
+
+      rafRef.current = requestAnimationFrame(tick);
+    }
+
+    doResize();
+    window.addEventListener('resize', resize);
+    window.addEventListener('mousemove', onMouseMove, { passive: true });
+    rafRef.current = requestAnimationFrame(tick);
+
+    rebuildRef.current = () => {
+      const { w, h } = sizeRef.current;
+      if (w > 0 && h > 0) buildDots(w, h);
+    };
+
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      clearInterval(speedInterval);
+      clearTimeout(resizeTimer);
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('mousemove', onMouseMove);
+    };
+  }, []);
+
+  ml.useEffect(() => {
+    rebuildRef.current?.();
+  }, [dotRadius, dotSpacing]);
+
+  return s.jsxs("div", {
+    className: "dot-field-container",
+    ...rest,
+    style: {
+      position: 'absolute',
+      inset: 0,
+      width: '100%',
+      height: '100%',
+      zIndex: 1,
+      ...rest.style
+    },
+    children: [
+      s.jsx("canvas", {
+        ref: canvasRef,
+        style: {
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+        }
+      }),
+      s.jsxs("svg", {
+        ref: svgRef,
+        style: {
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          pointerEvents: 'none',
+        },
+        children: [
+          s.jsx("defs", {
+            children: s.jsxs("radialGradient", {
+              id: glowIdRef.current,
+              children: [
+                s.jsx("stop", { offset: "0%", stopColor: glowColor }),
+                s.jsx("stop", { offset: "100%", stopColor: "transparent" })
+              ]
+            })
+          }),
+          s.jsx("circle", {
+            ref: glowRef,
+            cx: "-9999",
+            cy: "-9999",
+            r: glowRadius,
+            fill: `url(#${glowIdRef.current})`,
+            style: { opacity: 0, willChange: 'opacity' }
+          })
+        ]
+      })
+    ]
+  });
+});
 function rm({ onInitialize: A }) {
   const [L, w] = ml.useState(!1),
     v = (e) => {
@@ -12672,6 +12954,7 @@ function rm({ onInitialize: A }) {
       paddingTop: "20px"
     },
     children: [
+      s.jsx(DotField, { style: { zIndex: 11, transition: "opacity 1.5s ease", opacity: L ? 0 : 1 }, dotRadius: 1.5, dotSpacing: 14, bulgeStrength: 67, glowRadius: 160, sparkle: false, waveAmplitude: 0 }),
       s.jsx("div", { className: "ember ember-1" }),
       s.jsx("div", { className: "ember ember-2" }),
       s.jsx("div", { className: "ember ember-3" }),
@@ -12693,45 +12976,14 @@ function rm({ onInitialize: A }) {
           left: 0,
           width: "50%",
           height: "100%",
-          background: "linear-gradient(135deg, #05111d, #0b2136)",
-          borderRight: "1px solid rgba(0,191,255,0.18)",
+          background: "linear-gradient(135deg, #0f0505, #240b0b)",
+          borderRight: "1px solid rgba(255,50,0,0.18)",
           transition: "1.5s cubic-bezier(.77,0,.18,1)",
           transform: L ? "translateX(-100%)" : "translateX(0)",
           overflow: "hidden",
           zIndex: 10,
         },
-        children: [
-          s.jsx("div", {
-            style: {
-              position: "absolute",
-              inset: 0,
-              background: "linear-gradient(90deg, rgba(0,191,255,0.15) 1px, transparent 1px), linear-gradient(0deg, rgba(0,191,255,0.15) 1px, transparent 1px)",
-              backgroundSize: "40px 40px",
-              opacity: 0.6,
-              animation: "gridPulsate 4s ease-in-out infinite, technoPulse 8s infinite alternate"
-            }
-          }),
-          s.jsx("div", {
-            style: {
-              position: "absolute",
-              inset: 0,
-              background:
-                "repeating-linear-gradient(90deg, transparent, transparent 18px, rgba(0,191,255,0.05) 18px, rgba(0,191,255,0.05) 20px)",
-            },
-          }),
-          s.jsx("div", {
-            style: {
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              background:
-                "linear-gradient(180deg, transparent, rgba(0,191,255,0.08), transparent)",
-              opacity: 0.6,
-            },
-          }),
-        ],
+        children: [],
       }),
       s.jsxs("div", {
         style: {
@@ -12740,45 +12992,14 @@ function rm({ onInitialize: A }) {
           right: 0,
           width: "50%",
           height: "100%",
-          background: "linear-gradient(225deg, #05111d, #0b2136)",
-          borderLeft: "1px solid rgba(0,191,255,0.18)",
+          background: "linear-gradient(225deg, #0f0505, #240b0b)",
+          borderLeft: "1px solid rgba(255,50,0,0.18)",
           transition: "1.5s cubic-bezier(.77,0,.18,1)",
           transform: L ? "translateX(100%)" : "translateX(0)",
           overflow: "hidden",
           zIndex: 10,
         },
-        children: [
-          s.jsx("div", {
-            style: {
-              position: "absolute",
-              inset: 0,
-              background: "linear-gradient(90deg, rgba(0,191,255,0.15) 1px, transparent 1px), linear-gradient(0deg, rgba(0,191,255,0.15) 1px, transparent 1px)",
-              backgroundSize: "40px 40px",
-              opacity: 0.6,
-              animation: "gridPulsate 4s ease-in-out infinite, technoPulse 8s infinite alternate-reverse"
-            }
-          }),
-          s.jsx("div", {
-            style: {
-              position: "absolute",
-              inset: 0,
-              background:
-                "repeating-linear-gradient(90deg, transparent, transparent 18px, rgba(0,191,255,0.05) 18px, rgba(0,191,255,0.05) 20px)",
-            },
-          }),
-          s.jsx("div", {
-            style: {
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              background:
-                "linear-gradient(180deg, transparent, rgba(0,191,255,0.08), transparent)",
-              opacity: 0.6,
-            },
-          }),
-        ],
+        children: [],
       }),
       s.jsxs("div", {
         style: {
@@ -12799,9 +13020,9 @@ function rm({ onInitialize: A }) {
               fontWeight: "bold",
               letterSpacing: "8px",
               marginBottom: "26px",
-              color: "#8feaff",
+              color: "#ff884d",
               textShadow:
-                "0 0 18px rgba(0,191,255,0.7), 0 0 60px rgba(0,191,255,0.25)",
+                "0 0 18px rgba(255,50,0,0.7), 0 0 60px rgba(255,50,0,0.25)",
             },
             children: "CODEX SYSTEM",
           }),
@@ -12813,14 +13034,14 @@ function rm({ onInitialize: A }) {
               borderRadius: "999px",
               overflow: "hidden",
               margin: "0 auto 24px",
-              border: "1px solid rgba(0,191,255,0.16)",
+              border: "1px solid rgba(255,50,0,0.16)",
             },
             children: s.jsx("div", {
               style: {
                 width: "100%",
                 height: "100%",
-                background: "linear-gradient(90deg, #00bfff, #8feaff, #00bfff)",
-                boxShadow: "0 0 22px rgba(0,191,255,0.45)",
+                background: "linear-gradient(90deg, #ff2200, #ff884d, #ff2200)",
+                boxShadow: "0 0 22px rgba(255,50,0,0.45)",
               },
             }),
           }),
@@ -12828,7 +13049,7 @@ function rm({ onInitialize: A }) {
             style: {
               fontSize: "10px",
               fontFamily: "monospace",
-              color: "rgba(0,191,255,0.7)",
+              color: "rgba(255,50,0,0.7)",
               marginBottom: "12px",
               textAlign: "center"
             },
@@ -12848,8 +13069,8 @@ function rm({ onInitialize: A }) {
           }),
           s.jsx("button", {
             style: {
-              background: "linear-gradient(135deg, rgba(0,191,255,0.7), rgba(0,102,255,0.5))",
-              border: "1px solid rgba(0,191,255,0.8)",
+              background: "linear-gradient(135deg, rgba(255,50,0,0.7), rgba(200,20,0,0.5))",
+              border: "1px solid rgba(255,50,0,0.8)",
               padding: "20px 40px",
               borderRadius: "18px",
               fontSize: "16px",
@@ -12857,7 +13078,7 @@ function rm({ onInitialize: A }) {
               color: "#fff",
               cursor: "pointer",
               letterSpacing: "4px",
-              boxShadow: "0 0 30px rgba(0,191,255,0.3), inset 0 0 20px rgba(0,191,255,0.2)",
+              boxShadow: "0 0 30px rgba(255,50,0,0.3), inset 0 0 20px rgba(255,50,0,0.2)",
               transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
               textShadow: "0 0 10px rgba(255,255,255,0.5)",
               position: "relative",
@@ -12865,23 +13086,23 @@ function rm({ onInitialize: A }) {
             },
             onMouseOver: (H) => {
               H.currentTarget.style.transform = "scale(1.1) translateY(-2px)";
-              H.currentTarget.style.boxShadow = "0 0 60px rgba(0,191,255,0.6), inset 0 0 30px rgba(0,191,255,0.4)";
-              H.currentTarget.style.background = "linear-gradient(135deg, rgba(0,191,255,0.9), rgba(0,102,255,0.7))";
-              H.currentTarget.style.border = "1px solid #7df7ff";
+              H.currentTarget.style.boxShadow = "0 0 60px rgba(255,50,0,0.6), inset 0 0 30px rgba(255,50,0,0.4)";
+              H.currentTarget.style.background = "linear-gradient(135deg, rgba(255,50,0,0.9), rgba(200,20,0,0.7))";
+              H.currentTarget.style.border = "1px solid #ff8566";
             },
             onMouseOut: (H) => {
               H.currentTarget.style.transform = "scale(1) translateY(0)";
-              H.currentTarget.style.boxShadow = "0 0 30px rgba(0,191,255,0.3), inset 0 0 20px rgba(0,191,255,0.2)";
-              H.currentTarget.style.background = "linear-gradient(135deg, rgba(0,191,255,0.7), rgba(0,102,255,0.5))";
-              H.currentTarget.style.border = "1px solid rgba(0,191,255,0.8)";
+              H.currentTarget.style.boxShadow = "0 0 30px rgba(255,50,0,0.3), inset 0 0 20px rgba(255,50,0,0.2)";
+              H.currentTarget.style.background = "linear-gradient(135deg, rgba(255,50,0,0.7), rgba(200,20,0,0.5))";
+              H.currentTarget.style.border = "1px solid rgba(255,50,0,0.8)";
             },
             onMouseDown: (H) => {
               H.currentTarget.style.transform = "scale(0.95) translateY(2px)";
-              H.currentTarget.style.boxShadow = "0 0 20px rgba(0,191,255,0.8), inset 0 0 40px rgba(0,191,255,0.6)";
+              H.currentTarget.style.boxShadow = "0 0 20px rgba(255,50,0,0.8), inset 0 0 40px rgba(255,50,0,0.6)";
             },
             onMouseUp: (H) => {
               H.currentTarget.style.transform = "scale(1.1) translateY(-2px)";
-              H.currentTarget.style.boxShadow = "0 0 60px rgba(0,191,255,0.6), inset 0 0 30px rgba(0,191,255,0.4)";
+              H.currentTarget.style.boxShadow = "0 0 60px rgba(255,50,0,0.6), inset 0 0 30px rgba(255,50,0,0.4)";
             },
             onClick: v,
             children: "INITIALIZE SYSTEM",
@@ -12911,9 +13132,8 @@ function rm({ onInitialize: A }) {
             style: {
               fontSize: "12px",
               fontFamily: "monospace",
-              color: "rgba(0,191,255,0.7)",
+              color: "rgba(255,50,0,0.7)",
               marginBottom: "16px",
-              opacity: 0.8,
               letterSpacing: "1px"
             },
             children: ["AUTH_KEY: VALID // ID: ", Math.random().toString(16).substring(2, 10).toUpperCase()]
@@ -12927,7 +13147,7 @@ function rm({ onInitialize: A }) {
               marginBottom: "24px",
               color: "#9cefff",
               textShadow:
-                "0 0 20px rgba(0,191,255,0.7), 0 0 60px rgba(0,191,255,0.24)",
+                "0 0 20px rgba(255,50,0,0.7), 0 0 60px rgba(255,50,0,0.24)",
               textAlign: "center",
             },
             children: ["ACCESS", s.jsx("br", {}), "GRANTED"],
@@ -12936,9 +13156,9 @@ function rm({ onInitialize: A }) {
             style: {
               width: "240px",
               height: "4px",
-              background: "linear-gradient(90deg, transparent, #00bfff, transparent)",
+              background: "linear-gradient(90deg, transparent, #ff2200, transparent)",
               marginBottom: "30px",
-              boxShadow: "0 0 15px #00bfff",
+              boxShadow: "0 0 15px #ff2200",
               animation: "gridPulsate 2s infinite"
             },
           }),
@@ -13144,1055 +13364,168 @@ function mm(A) {
       });
 }
 
-function formatTime(s) {
-  if (isNaN(s) || !isFinite(s)) return "0:00";
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return m + ":" + (sec < 10 ? "0" : "") + sec;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function cn(...args) {
+  return args.filter(Boolean).join(" ");
+}
+"use strict";
+//import { jsx, jsxs } from "react/jsx-runtime";
+//import * as React from "react";
+//import { cn } from "./utils";
+const VERTEX_SHADER = `
+attribute vec2 position;
+void main() {
+  gl_Position = vec4(position, 0.0, 1.0);
+}
+`;
+const FRAGMENT_SHADER = `
+precision highp float;
+
+uniform vec2 u_res;
+uniform float u_time;
+uniform vec2 u_mouse;
+uniform float u_isDark;
+uniform float u_speed;
+uniform float u_turbulence;
+uniform float u_mouseInfluence;
+uniform float u_grain;
+uniform float u_sparkle;
+uniform float u_vignette;
+uniform float u_opacity;
+
+uniform vec3 u_darkA;
+uniform vec3 u_darkB;
+uniform vec3 u_darkC;
+uniform vec3 u_lightA;
+uniform vec3 u_lightB;
+uniform vec3 u_lightC;
+
+vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec3 permute(vec3 x) { return mod289(((x * 34.0) + 1.0) * x); }
+
+float snoise(vec2 v) {
+  const vec4 C = vec4(0.211324865405187, 0.366025403784439,
+                     -0.577350269189626, 0.024390243902439);
+  vec2 i = floor(v + dot(v, C.yy));
+  vec2 x0 = v - i + dot(i, C.xx);
+  vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  vec4 x12 = x0.xyxy + C.xxzz;
+  x12.xy -= i1;
+  i = mod289(i);
+  vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
+  vec3 m = max(0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);
+  m = m * m;
+  m = m * m;
+  vec3 x = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h = abs(x) - 0.5;
+  vec3 ox = floor(x + 0.5);
+  vec3 a0 = x - ox;
+  m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
+  vec3 g;
+  g.x = a0.x * x0.x + h.x * x0.y;
+  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m, g);
 }
 
-function YouTubeMusicPlayer() {
-  const [currentSongIndex, setCurrentSongIndex] = ml.useState(0);
-  const [isPlaying, setIsPlaying] = ml.useState(!1);
-  const [volume, setVolume] = ml.useState(60);
-  const [isMuted, setIsMuted] = ml.useState(!1);
-  const [repeatMode, setRepeatMode] = ml.useState("ALL");
-  const [currentTime, setCurrentTime] = ml.useState(0);
-  const [duration, setDuration] = ml.useState(0);
-  const [searchQuery, setSearchQuery] = ml.useState("");
-
-  const playerRef = ml.useRef(null);
-  const wrapperRef = ml.useRef(null);
-  const timerRef = ml.useRef(null);
-
-  const [playlist, setPlaylist] = ml.useState([
-    { title: "Imagine Dragons - Believer", id: "igulXNL1Kz0" },
-    { title: "Imagine Dragons - Thunder", id: "GtEvysh1654" },
-    { title: "Imagine Dragons - Demons", id: "MA0aCUxItYA" },
-    { title: "Imagine Dragons - Radioactive", id: "vJao1u2uBqY" },
-    { title: "Imagine Dragons - Whatever It Takes", id: "UsuF4jJ4sgA" },
-    { title: "Imagine Dragons - It’s Time", id: "NASqUELHjPE" },
-    { title: "Imagine Dragons - On Top of the World", id: "cxmMD5OvYRQ" },
-    { title: "Imagine Dragons - Next to Me", id: "axS6L0NX7VE" },
-    { title: "Imagine Dragons - Natural", id: "V5M2WZiAy6k" },
-    { title: "Imagine Dragons - Shots", id: "N-awc3YAncM" },
-    { title: "Alan Walker - Faded", id: "qdpXxGPqW-Y" },
-    { title: "Alan Walker - Sing Me to Sleep", id: "K7UGaydx7NI" },
-    { title: "Alan Walker - Alone", id: "bPs0xFd4skY" },
-    { title: "Alan Walker - Darkside", id: "sdAOoB5ML0Q" },
-    { title: "Alan Walker - The Spectre", id: "qHDJSRlNhVs" },
-    { title: "Alan Walker - All Falls Down", id: "KJZsy_8Lyws" },
-    { title: "Alan Walker & K-391 - Ignite", id: "zrwTYozyzYA" },
-    { title: "Alan Walker - Diamond Heart", id: "c9R9VsK54ZQ" },
-    { title: "Alan Walker - Tired", id: "YnaEoCY_vzc" },
-    { title: "Alan Walker - On My Way", id: "fm-nXA-K0Dg" },
-    { title: "Alan Walker & Ava Max - Alone, Pt. II", id: "GPvBmcoriNo" },
-    { title: "Alan Walker - Heading Home", id: "HFuVhJySO2o" },
-    { title: "Alan Walker - Believers", id: "LClEtrHvxfo" },
-    { title: "Alan Walker - Lost Control", id: "-Ed-GNq2EyU" },
-    { title: "Alan Walker - Play", id: "yDk7k06-E4w" },
-    { title: "Alan Walker, K-391 & Emelie Hollow - Lily", id: "ox4tmEV6-QU" },
-    { title: "Alan Walker, K-391 & Boy In Space - Paradise", id: "TG_0_OdkwN0" },
-    { title: "Alan Walker & Sofia Carson - Different World", id: "6ow6MueyJOQ" },
-    { title: "K-391, Alan Walker & Ahrix - End of Time", id: "CaZXdZGZfb0" },
-    { title: "Alan Walker - Live Fast", id: "eABUCA8BmTg" },
-    { title: "American Authors - Best Day of My Life", id: "vJ9KFEJVISo" },
-    { title: "American Authors - Go Big or Go Home", id: "iZzFmnx4QmA" },
-    { title: "X Ambassadors - Renegades", id: "8j741TUIET0" },
-    { title: "The Script - Superheroes", id: "xP3LUSHj2J0" },
-    { title: "Coldplay - Adventure of a Lifetime", id: "y6y8bfyUWOw" },
-    { title: "Coldplay - A Sky Full of Stars", id: "VPRjCeoBqrI" },
-    { title: "OneRepublic - Love Runs Out", id: "KkVID7tMUbE" },
-    { title: "OneRepublic - Counting Stars", id: "mgT0N3tMP74" },
-    { title: "Bastille - Pompeii", id: "cvQ2LF3hyuY" },
-    { title: "Fall Out Boy - My Songs Know What You Did in the Dark", id: "i0oSTgq7Bvc" },
-    { title: "Top of the World", id: "sjLRh-QPM9c" },
-    { title: "Wolves", id: "s2uLELuQvjw" },
-    { title: "Who I Am", id: "PFs7egR2iDE" },
-    { title: "Only One King", id: "3BFuQicL2WI" },
-    { title: "Money Run Low", id: "facc6KUJYcM" },
-    { title: "Legends Are Made", id: "i2hL_NuodtU" },
-    { title: "Life Force", id: "bkjchS0PTl0" },
-    { title: "Montage Rugada", id: "Hd5nXTyaXZg" },
-    { title: "Born For This", id: "aJ5IzGBnWAc" },
-    { title: "Glory", id: "i3ucSSVJTL4" },
-    { title: "Stronger", id: "cNld-AHw-Wg" },
-    { title: "Rise", id: "fB8TyLTD7EE" },
-    { title: "The Phoenix", id: "5JqY-6q-RNA" },
-    { title: "Warriors", id: "wPQEeBAXou0" },
-    { title: "The Resistance", id: "SKnRdQiH3-k" },
-    { title: "Hall Of Fame", id: "3Kxf2dHlDpQ" },
-    { title: "Montagem Xonada", id: "JjPtDl6EJ3o" },
-    { title: "No Batidao", id: "GXioir-fujY" },
-    { title: "Papa Roach – Born for Greatness", id: "WFZVaycG-7I" },
-    { title: "Linkin Park – Battle Symphony", id: "D7ab595h0AU" },
-    { title: "Coldplay – Viva la Vida", id: "y4zdDXPYo0I" },
-    { title: "Twenty One Pilots – Heathens", id: "zq2pagG8_ok" },
-    { title: "Muse – Uprising", id: "itUJUs95LqU" },
-    { title: "Fall Out Boy – Immortals", id: "UmyGVS5krMs" },
-    { title: "Skillet – Feel Invincible", id: "J4JisubEvSI" },
-    { title: "AWOLNATION – Run (Wake Up)", id: "NQPDm-GdmAs" },
-    { title: "OneRepublic – I Lived", id: "KINfQbfZwik" },
-    { title: "Macklemore & Ryan Lewis – Can’t Hold Us", id: "qWMNO8gq_cg" },
-    { title: "Macklemore – Glorious (ft. Skylar Grey)", id: "GTyEsIMefzc" },
-    { title: "Rachel Platten – Fight Song", id: "-a1qTzh16hY" },
-    { title: "Welshly Arms – Legendary", id: "4yTB3Cu8W0g" },
-    { title: "Demi Lovato – Skyscraper", id: "QiTJ0658WvE" },
-    { title: "Beyoncé – Halo", id: "pCSL48AI_Ms" },
-    { title: "Queen – We Will Rock You", id: "y3Ca3c6J9N4" },
-    { title: "Queen – We Are the Champions", id: "d5GkgVhFeZY" },
-    { title: "AC/DC – Thunderstruck", id: "skwZ5MQ7CfE" },
-    { title: "Smash Mouth – I’m a Believer", id: "bWqmc8qxEps" },
-    { title: "U2 – Elevation", id: "19KstSgU-c0" },
-    { title: "U2 – Beautiful Day", id: "hJ_burYdegk" },
-    { title: "Avenged Sevenfold – Carry On", id: "rXNlFiMaPMA" },
-    { title: "P!nk – Just Like Fire", id: "k0ZmztU-X2I" },
-    { title: "Train – Drive By", id: "maklLfjCO90" },
-    { title: "Flo Rida – Good Feeling", id: "EO6ZFcBd3hg" },
-    { title: "Pitbull – Give Me Everything (ft. Ne-Yo)", id: "3MqUW5txLjs" },
-    { title: "The Chainsmokers & Coldplay – Something Just Like This", id: "fZUfdnmtg4Y" },
-    { title: "Ellie Goulding – Burn", id: "VRcQsgjo7ZQ" },
-    { title: "Justin Timberlake – Can’t Stop The Feeling!", id: "0Ui-QzihJGo" },
-    { title: "Bruno Mars – Just The Way You Are", id: "u7XjPmN-tHw" },
-    { title: "Rachel Platten – Stand By You", id: "-urmcz2RSwI" },
-    { title: "Imagine Dragons – I Bet My Life", id: "KKgwLVqJbho" },
-    { title: "Imagine Dragons – Warriors", id: "wPQEeBAXou0" },
-    { title: "The Script – Hall of Fame (ft. Will.I.Am)", id: "dtgoDXEOxTM" },
-    { title: "Shinedown – Get Up", id: "2hbqY9kQ6ho" },
-    { title: "Nickelback – Burn It to the Ground", id: "ZHuogY04SbI" },
-    { title: "Eminem – Not Afraid (Clean Version)", id: "_uuXpXSZYMk" },
-    { title: "OneRepublic – All the Right Moves", id: "eYYcQYXMkKU" },
-    { title: "Coldplay – Paradise", id: "ymMvDs15htc" },
-    { title: "Thirty Seconds to Mars – Kings and Queens", id: "VSiTrGCAbt8" },
-    { title: "Avicii – Wake Me Up", id: "5y_KJAg8bHI" },
-    { title: "Kygo – Firestone (ft. Conrad Sewell)", id: "XUUjliDBAmk" },
-    { title: "Zedd – The Middle (ft. Maren Morris)", id: "Lj6Y6JCu-l4" },
-    { title: "David Guetta – Titanium (ft. Sia)", id: "Xn_kp8OZtc8" },
-    { title: "Sia – Unstoppable", id: "oS07d8Gr4tw" },
-    { title: "Maroon 5 – Maps", id: "Y7ix6RITXM0" },
-    { title: "OneRepublic – Good Life", id: "-Bo4oWK22bk" },
-    { title: "Phillip Phillips – Home", id: "jevGL7i1BVQ" },
-    { title: "Rachel Platten – Fight Song", id: "XbxNtPiCBK8" },
-    { title: "Sara Bareilles – Brave", id: "4Ny_LX3byp8" },
-    { title: "Kelly Clarkson – Stronger (What Doesn’t Kill You)", id: "RjZzySx7TmM" },
-    { title: "Katy Perry – Rise", id: "2cvB35A3pRU" },
-    { title: "Walk The Moon – Shut Up and Dance", id: "0CGH3zm2R7c" },
-    { title: "Coldplay – Viva La Vida", id: "y4zdDXPYo0I" },
-    { title: "Queen – Don’t Stop Me Now", id: "MHi9mKq0slA" },
-    { title: "Macklemore & Ryan Lewis – Can’t Hold Us (ft. Ray Dalton)", id: "xHRkHXjZcg0" },
-    { title: "Imagine Dragons – Monster", id: "SWdJdGYfYPw" },
-    { title: "Bastille – World Gone Mad", id: "I6IaW8MiuRo" },
-    { title: "OneRepublic – Seasons", id: "Ymts4ldfPws" },
-    { title: "Journey - Don't Stop Believin'", id: "1k8craCGpgs" },
-    { title: "Survivor - Eye of the Tiger", id: "btPJPFnesV4" },
-    { title: "Bon Jovi - It's My Life", id: "vx2u5uUu3DE" },
-    { title: "Van Halen - Jump", id: "SwYN7mTi6HM" },
-    { title: "Swedish House Mafia ft. John Martin - Don't You Worry Child", id: "1y6smkh6c-0" },
-    { title: "Maroon 5 ft. Christina Aguilera - Moves Like Jagger", id: "iEPTlhBmwRg" },
-    { title: "Journey - Any Way You Want It", id: "atxUuldUcfI" },
-    { title: "Aerosmith - Dream On", id: "89dGC8de0CA" },
-    { title: "Michael Jackson - Man in the Mirror", id: "PivWY9wn5ps" },
-    { title: "Katy Perry - Firework", id: "QGJuMBdaqIw" }
-  ]);
-
-  const filteredPlaylist = playlist.map((song, index) => ({ ...song, index })).filter(song => song.title.toLowerCase().includes(searchQuery.toLowerCase()));
-
-  const stateRef = ml.useRef({ currentSongIndex, repeatMode, isPlaying });
-  ml.useEffect(() => {
-    stateRef.current = { currentSongIndex, repeatMode, isPlaying };
-  }, [currentSongIndex, repeatMode, isPlaying]);
-
-  ml.useEffect(() => {
-    if (!wrapperRef.current) return;
-    const el = document.createElement("div");
-    wrapperRef.current.appendChild(el);
-
-    const initPlayer = () => {
-      playerRef.current = new window.YT.Player(el, {
-        height: "100%",
-        width: "100%",
-        videoId: playlist[stateRef.current.currentSongIndex].id,
-        host: 'https://www.youtube.com',
-        playerVars: {
-          autoplay: 0,
-          controls: 0,
-          disablekb: 1,
-          fs: 0,
-          rel: 0,
-          enablejsapi: 1,
-          playsinline: 1,
-          origin: window.location.origin,
-        },
-        events: {
-          onReady: (event) => {
-            if (stateRef.current.isPlaying) event.target.playVideo();
-            else event.target.pauseVideo();
-            event.target.setVolume(parseInt(window.localStorage.getItem('musicVolume'), 10) || 60);
-          },
-          onStateChange: (event) => {
-            if (event.data === window.YT.PlayerState.PLAYING) {
-               setIsPlaying(!0);
-               setDuration(event.target.getDuration());
-            } else if (event.data === window.YT.PlayerState.PAUSED) {
-               setIsPlaying(!1);
-            } else if (event.data === window.YT.PlayerState.ENDED) {
-               const { currentSongIndex, repeatMode } = stateRef.current;
-               let nextIndex = currentSongIndex;
-               if (repeatMode === "ALL") {
-                 nextIndex = (currentSongIndex + 1) % playlist.length;
-               } else if (repeatMode === "ONE") {
-                 // stay on same index
-               }
-               setCurrentSongIndex(nextIndex);
-               playerRef.current.loadVideoById(playlist[nextIndex].id);
-            }
-          },
-          onError: (event) => {
-             console.error("YouTube Player Error:", event.data);
-             const { currentSongIndex, repeatMode } = stateRef.current;
-             let nextIndex = (currentSongIndex + 1) % playlist.length;
-             setCurrentSongIndex(nextIndex);
-          }
-        }
-      });
-    };
-
-    if (!window.YT && !document.getElementById("youtube-api-script")) {
-      const tag = document.createElement("script");
-      tag.id = "youtube-api-script";
-      tag.src = "https://www.youtube.com/iframe_api";
-      const firstScriptTag = document.getElementsByTagName("script")[0];
-      if (firstScriptTag && firstScriptTag.parentNode) {
-        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-      } else {
-        document.head.appendChild(tag);
-      }
-      window.onYouTubeIframeAPIReady = initPlayer;
-    } else if (window.YT && window.YT.Player) {
-      initPlayer();
-    } else {
-      const old = window.onYouTubeIframeAPIReady;
-      window.onYouTubeIframeAPIReady = () => {
-         if (old) old();
-         initPlayer();
-      };
-    }
-    
-    return () => {
-      if (playerRef.current && playerRef.current.destroy) {
-        playerRef.current.destroy();
-      }
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
-
-  ml.useEffect(() => {
-    if (playerRef.current && playerRef.current.loadVideoById) {
-      playerRef.current.loadVideoById({ videoId: playlist[currentSongIndex].id });
-      if (stateRef.current.isPlaying) {
-         setTimeout(() => {
-            if (playerRef.current && playerRef.current.playVideo) {
-               playerRef.current.playVideo();
-            }
-         }, 100);
-      }
-    }
-  }, [currentSongIndex]);
-
-  ml.useEffect(() => {
-    timerRef.current = setInterval(() => {
-      if (playerRef.current && playerRef.current.getCurrentTime && isPlaying) {
-        setCurrentTime(playerRef.current.getCurrentTime());
-      }
-    }, 1000);
-    return () => clearInterval(timerRef.current);
-  }, [isPlaying]);
-
-
-  ml.useEffect(() => {
-    if (playerRef.current && playerRef.current.setVolume) {
-      playerRef.current.setVolume(isMuted ? 0 : volume);
-    }
-  }, [volume, isMuted]);
-  
-  const togglePlay = () => {
-     if (playerRef.current && playerRef.current.playVideo) {
-         if (isPlaying) {
-             playerRef.current.pauseVideo();
-         } else {
-             playerRef.current.playVideo();
-         }
-     }
-  };
-
-  const shufflePlaylist = () => {
-    const currentSong = playlist[currentSongIndex];
-    const newPlaylist = [...playlist];
-    for (let i = newPlaylist.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [newPlaylist[i], newPlaylist[j]] = [newPlaylist[j], newPlaylist[i]];
-    }
-    const newIndex = newPlaylist.findIndex(song => song.id === currentSong.id);
-    setPlaylist(newPlaylist);
-    setCurrentSongIndex(newIndex !== -1 ? newIndex : 0);
-  };
-  
-  const skipForward = () => {
-    let nextIndex = currentSongIndex;
-    if (repeatMode === "ALL") {
-      nextIndex = (currentSongIndex + 1) % playlist.length;
-    } else {
-      nextIndex = Math.min(currentSongIndex + 1, playlist.length - 1);
-    }
-    setCurrentSongIndex(nextIndex);
-    setIsPlaying(true);
-  };
-
-  const skipBackward = () => {
-    let prevIndex = currentSongIndex;
-    if (repeatMode === "ALL") {
-      prevIndex = (currentSongIndex - 1 + playlist.length) % playlist.length;
-    } else {
-       prevIndex = Math.max(currentSongIndex - 1, 0);
-    }
-    setCurrentSongIndex(prevIndex);
-    setIsPlaying(true);
-  };
-
-  const handleVolumeChange = (e) => {
-     const rect = e.currentTarget.getBoundingClientRect();
-     const val = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-     setVolume(val * 100);
-     setIsMuted(!1);
-     window.localStorage.setItem('musicVolume', val * 100);
-  };
-  
-  const handleProgressChange = (e) => {
-     if (playerRef.current && playerRef.current.seekTo && duration > 0) {
-       const rect = e.currentTarget.getBoundingClientRect();
-       const val = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-       playerRef.current.seekTo(val * duration, !0);
-       setCurrentTime(val * duration);
-     }
-  };
-
-  const toggleRepeatMode = () => {
-     setRepeatMode(prev => prev === "ALL" ? "ONE" : "ALL");
-  };
-
-  const toggleMute = () => setIsMuted(!isMuted);
-
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
-  
-  return s.jsxs("div", {
-    className: "p-5",
-    style: { background: "transparent", width: "100%", height: "100%", minHeight: "450px", display: "flex", flexDirection: "column" },
-    children: [
-        s.jsxs("div", {
-            style: { 
-              background: "linear-gradient(180deg, rgba(25,18,15,0.7), rgba(10,5,3,0.85))",
-              borderRadius: "18px",
-              padding: "18px",
-              border: "1.5px solid rgba(255,176,120,0.25)",
-              boxShadow: "0 0 24px rgba(0,0,0,.5), inset 0 0 12px rgba(255,255,255,.05)",
-              marginBottom: "20px",
-              position: "relative",
-              overflow: "hidden"
-            },
-            children: [
-               s.jsx("div", { ref: wrapperRef, style: { width: "100%", aspectRatio: "16/9", borderRadius: "12px", overflow: "hidden", marginBottom: "16px", background: "#000", pointerEvents: "auto", position: "relative", zIndex: 1 } }),
-               s.jsxs("div", {
-                   style: { display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px", position: "relative", zIndex: 1 },
-                   children: [
-                       s.jsx("button", {
-                           onClick: shufflePlaylist,
-                           style: { width: "36px", height: "36px", borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "none", cursor: "pointer", fontSize: "14px", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", transition: "all 0.15s ease", marginRight: "4px" },
-                           onMouseEnter: e => e.currentTarget.style.background = "rgba(255,255,255,0.2)",
-                           onMouseLeave: e => e.currentTarget.style.background = "rgba(255,255,255,0.1)",
-                           children: "🔀"
-                       }),
-                       s.jsx("button", {
-                           onClick: skipBackward,
-                           style: { width: "36px", height: "36px", borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "none", cursor: "pointer", fontSize: "14px", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", transition: "all 0.15s ease" },
-                           onMouseEnter: e => e.currentTarget.style.background = "rgba(255,255,255,0.2)",
-                           onMouseLeave: e => e.currentTarget.style.background = "rgba(255,255,255,0.1)",
-                           children: "⏮"
-                       }),
-                       s.jsx("button", {
-                           onClick: togglePlay,
-                           style: { width: "42px", height: "42px", borderRadius: "50%", background: "linear-gradient(145deg,#ffb37a,#ff8a70)", border: "none", cursor: "pointer", fontSize: "16px", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 12px rgba(255,176,120,0.5)", color: "#fff", transition: "transform 0.15s ease", overflow: "hidden", position: "relative" },
-                           onMouseDown: e => e.currentTarget.style.transform = "scale(0.95)",
-                           onMouseUp: e => e.currentTarget.style.transform = "scale(1)",
-                           onMouseLeave: e => e.currentTarget.style.transform = "scale(1)",
-                           children: [
-                               s.jsx("div", { style: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", background: isPlaying ? "transparent" : "rgba(0,0,0,0.4)" }, children: !isPlaying && "▶" })
-                           ]
-                       }),
-                       s.jsx("button", {
-                           onClick: skipForward,
-                           style: { width: "36px", height: "36px", borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "none", cursor: "pointer", fontSize: "14px", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", transition: "all 0.15s ease" },
-                           onMouseEnter: e => e.currentTarget.style.background = "rgba(255,255,255,0.2)",
-                           onMouseLeave: e => e.currentTarget.style.background = "rgba(255,255,255,0.1)",
-                           children: "⏭"
-                       }),
-                       s.jsxs("div", {
-                           onClick: handleProgressChange,
-                           style: { flex: 1, height: "12px", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "10px", position: "relative", cursor: "pointer" },
-                           children: [
-                               s.jsxs("div", {
-                                   style: { height: "100%", width: `${progressPercent}%`, background: "linear-gradient(90deg, #ffb37a, #ff8a70)", borderRadius: "10px", position: "relative", transition: "width 0.1s linear" },
-                                   children: [
-                                       s.jsx("div", { style: { position: "absolute", right: "-8px", top: "50%", transform: "translateY(-50%)", width: "16px", height: "16px", borderRadius: "50%", background: "#fff", boxShadow: "0 0 10px rgba(255,176,120,.8)" } })
-                                   ]
-                               })
-                           ]
-                       }),
-                       s.jsx("button", {
-                           onClick: toggleRepeatMode,
-                           style: { width: "36px", height: "36px", borderRadius: "50%", background: repeatMode === "ONE" ? "rgba(255,176,120,0.2)" : "rgba(255,255,255,0.05)", border: `1px solid ${repeatMode === "ONE" ? "rgba(255,176,120,0.5)" : "rgba(255,255,255,0.1)"}`, cursor: "pointer", fontSize: "15px", color: repeatMode === "ONE" ? "#ffb37a" : "rgba(255,255,255,0.6)", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s" },
-                           children: "🔁"
-                       }),
-                       s.jsx("div", {
-                           style: { minWidth: "90px", fontSize: "14px", fontWeight: "600", color: "rgba(255,255,255,0.8)", textAlign: "right", fontVariantNumeric: "tabular-nums" },
-                           children: `${formatTime(currentTime)} / ${formatTime(duration)}`
-                       })
-                   ]
-               }),
-               s.jsxs("div", {
-                   style: { display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", position: "relative", zIndex: 1 },
-                   children: [
-                       s.jsx("span", { onClick: toggleMute, style: { fontSize: "16px", cursor: "pointer", color: isMuted || volume === 0 ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.9)" }, children: isMuted || volume === 0 ? "🔇" : "🔊" }),
-                       s.jsxs("div", {
-                           onClick: handleVolumeChange,
-                           style: { position: "relative", width: "120px", height: "8px", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "8px", cursor: "pointer" },
-                           children: [
-                               s.jsx("div", { style: { position: "absolute", height: "100%", width: `${isMuted ? 0 : volume}%`, background: "linear-gradient(90deg, #7b4dff, #d1b3ff)", borderRadius: "8px" } }),
-                               s.jsx("div", { style: { position: "absolute", top: "-4px", left: `calc(${isMuted ? 0 : volume}% - 4px)`, width: "8px", height: "16px", background: "#fff", borderRadius: "4px", boxShadow: "0 0 6px rgba(180,140,255,0.6)" } })
-                           ]
-                       })
-                   ]
-               })
-            ]
-        }),
-        s.jsxs("div", {
-            style: { position: "relative", marginBottom: "16px" },
-            children: [
-               s.jsx("input", {
-                   type: "text",
-                   placeholder: "Search tracks...",
-                   value: searchQuery,
-                   onChange: (e) => setSearchQuery(e.target.value),
-                   style: {
-                       width: "100%",
-                       padding: "10px 16px 10px 38px",
-                       background: "rgba(0,0,0,0.3)",
-                       border: "1px solid rgba(255,255,255,0.1)",
-                       borderRadius: "12px",
-                       color: "#fff",
-                       fontSize: "14px",
-                       outline: "none",
-                       fontFamily: "var(--font-sans)",
-                       transition: "border-color 0.2s"
-                   },
-                   onFocus: (e) => e.target.style.borderColor = "rgba(255,176,120,0.5)",
-                   onBlur: (e) => e.target.style.borderColor = "rgba(255,255,255,0.1)"
-               }),
-               s.jsx("span", { style: { position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.4)", fontSize: "14px" }, children: "🔍" })
-            ]
-        }),
-        s.jsx("div", {
-            style: { display: "flex", flexDirection: "column", gap: "6px", overflowY: "auto", flex: 1, paddingRight: "4px" },
-            className: "scroll-zone",
-            children: filteredPlaylist.length > 0 ? filteredPlaylist.map((song) => s.jsxs("div", {
-                key: song.id,
-                onClick: () => {
-                    if (currentSongIndex === song.index) {
-                        togglePlay();
-                        return;
-                    }
-                    setCurrentSongIndex(song.index);
-                    setIsPlaying(!0);
-                },
-                style: {
-                    padding: "12px 16px",
-                    cursor: "pointer",
-                    borderRadius: "12px",
-                    background: currentSongIndex === song.index ? "rgba(255, 176, 120, 0.15)" : "rgba(255,255,255,0.02)",
-                    border: currentSongIndex === song.index ? "1px solid rgba(255,176,120,0.3)" : "1px solid transparent",
-                    color: currentSongIndex === song.index ? "#ffffff" : "rgba(255,255,255,0.7)",
-                    fontWeight: currentSongIndex === song.index ? "600" : "400",
-                    fontFamily: "var(--font-sans)",
-                    fontSize: "14px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "14px",
-                    transition: "all 0.2s ease"
-                },
-                onMouseOver: (e) => {
-                    if (currentSongIndex !== song.index) {
-                        e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
-                    }
-                },
-                onMouseOut: (e) => {
-                    if (currentSongIndex !== song.index) {
-                        e.currentTarget.style.background = "rgba(255,255,255,0.02)";
-                    }
-                },
-                children: [
-                    s.jsx("div", { 
-                        style: { 
-                            width: "28px", height: "28px", borderRadius: "6px", display: "flex", alignItems: "center", justifyContent: "center",
-                            background: currentSongIndex === song.index ? "linear-gradient(145deg, #ffb37a, #ff8a70)" : "rgba(255,255,255,0.1)",
-                            color: currentSongIndex === song.index ? "#000" : "rgba(255,255,255,0.5)",
-                            fontSize: "10px", fontWeight: "bold"
-                        }, 
-                        children: currentSongIndex === song.index && isPlaying ? "🎶" : `${song.index + 1}` 
-                    }),
-                    s.jsxs("div", { 
-                        style: { flex: 1, display: "flex", flexDirection: "column" }, 
-                        children: [
-                           s.jsx("span", { children: song.title }),
-                           s.jsx("span", { style: { fontSize: "11px", color: currentSongIndex === song.index ? "rgba(255,176,120,0.8)" : "rgba(255,255,255,0.3)" }, children: "Codex Audio Library" })
-                        ]
-                    }),
-                    currentSongIndex === song.index && isPlaying ? s.jsx("div", { style: { display: "flex", gap: "3px", height: "14px", alignItems: "flex-end" }, children: [1,2,3].map(i => s.jsx("div", { key: i, style: { width: "3px", background: "#ffb37a", animation: `eqBounce 0.${5 + i}s infinite alternate` } })) }) : null
-                ]
-            })) : s.jsx("div", { style: { padding: "20px", textAlign: "center", color: "rgba(255,255,255,0.4)", fontSize: "14px" }, children: "No tracks found." })
-        }),
-        s.jsxs("div", {
-            style: { display: "none" },
-            children: [
-                
-            ]
-        })
-    ]
-  });
+float fbm(vec2 p, float turbulence) {
+  float total = 0.0;
+  float amp = 0.5;
+  float freq = 1.0;
+  mat2 rot = mat2(cos(0.45), sin(0.45), -sin(0.45), cos(0.45));
+  for (int i = 0; i < 5; i++) {
+    total += snoise(p * freq) * amp;
+    p = rot * p;
+    freq *= mix(1.85, 2.35, clamp(turbulence, 0.0, 2.0) * 0.5);
+    amp *= 0.5;
+  }
+  return total;
 }
 
-const quotes = [
-  { text: "Tactics flow from a superior position.", author: "Bobby Fischer" },
-  { text: "When you see a good move, look for a better one.", author: "Emanuel Lasker" },
-  { text: "Strategy without tactics is the slowest route to victory. Tactics without strategy is the noise before defeat.", author: "Sun Tzu" },
-  { text: "A strong memory, concentration, imagination, and a strong will is required to become a great chess player.", author: "Bobby Fischer" },
-  { text: "Every chess master was once a beginner.", author: "Irving Chernev" },
-  { text: "Chess is the struggle against the error.", author: "Johannes Zukertort" },
-  { text: "In life, as in chess, forethought wins.", author: "Charles Buxton" },
-  { text: "Discipline is the bridge between goals and accomplishment.", author: "Jim Rohn" },
-  { text: "The harder you work, the luckier you get.", author: "Gary Player" },
-  { text: "We are what we repeatedly do. Excellence, then, is not an act, but a habit.", author: "Will Durant" },
-  { text: "Success is not final, failure is not fatal: it is the courage to continue that counts.", author: "Winston Churchill" },
-  { text: "Great leaders are almost always great simplifiers.", author: "Colin Powell" },
-  { text: "Persistence can change failure into extraordinary achievement.", author: "Marv Levy" },
-  { text: "Patience and persistence are the magical providers of success.", author: "Anonymous" },
-  { text: "The blunders are all there on the board, waiting to be made.", author: "Savielly Tartakower" },
-  { text: "Chess, like love, like music, has the power to make men happy.", author: "Siegbert Tarrasch" },
-  { text: "Play the opening like a book, the middle game like a magician, and the endgame like a machine.", author: "Rudolf Spielmann" },
-  { text: "I have failed many times. And that's why I am a success.", author: "Michael Jordan" },
-  { text: "You may have to fight a battle more than once to win it.", author: "Margaret Thatcher" },
-  { text: "A leader is one who knows the way, goes the way, and shows the way.", author: "John C. Maxwell" },
-  { text: "Learning never exhausts the mind.", author: "Leonardo da Vinci" },
-  { text: "The expert in anything was once a beginner.", author: "Helen Hayes" },
-  { text: "It is not the strongest of the species that survive, nor the most intelligent, but the one most responsive to change.", author: "Charles Darwin" },
-  { text: "Chess holds its master in its own bonds, shackling the mind and brain so that the inner freedom of the very strongest must suffer.", author: "Albert Einstein" },
-  { text: "There is no remorse like the remorse of chess.", author: "H.G. Wells" },
-  { text: "Methodical thinking is of more use in chess than inspiration.", author: "C.J.S. Purdy" },
-  { text: "Daring ideas are like chessmen moved forward; they may be beaten, but they may start a winning game.", author: "Johann Wolfgang von Goethe" },
-  { text: "Chess is life in miniature. Chess is a struggle, chess is battles.", author: "Garry Kasparov" },
-  { text: "I am my own worst enemy when I am losing.", author: "Anonymous" },
-  { text: "Continuous effort - not strength or intelligence - is the key to unlocking our potential.", author: "Winston Churchill" },
-  { text: "I fear not the man who has practiced 10,000 kicks once, but I fear the man who has practiced one kick 10,000 times.", author: "Bruce Lee" },
-  { text: "An ounce of practice is worth more than tons of preaching.", author: "Mahatma Gandhi" },
-  { text: "Leadership is the capacity to translate vision into reality.", author: "Warren Bennis" },
-  { text: "Action is the foundational key to all success.", author: "Pablo Picasso" },
-  { text: "He who has a why to live for can bear almost any how.", author: "Friedrich Nietzsche" },
-  { text: "Don't watch the clock; do what it does. Keep going.", author: "Sam Levenson" },
-  { text: "Many of life's failures are people who did not realize how close they were to success when they gave up.", author: "Thomas A. Edison" },
-  { text: "The secret of getting ahead is getting started.", author: "Mark Twain" },
-  { text: "Without continual growth and progress, such words as improvement, achievement, and success have no meaning.", author: "Benjamin Franklin" },
-  { text: "Never give in except to convictions of honor and good sense.", author: "Winston Churchill" },
-  { text: "Difficulties break some men but make others.", author: "Nelson Mandela" },
-  { text: "A goal without a plan is just a wish.", author: "Antoine de Saint-Exupéry" },
-  { text: "Plans are nothing; planning is everything.", author: "Dwight D. Eisenhower" },
-  { text: "Give me six hours to chop down a tree and I will spend the first four sharpening the axe.", author: "Abraham Lincoln" },
-  { text: "To be prepared is half the victory.", author: "Miguel de Cervantes" },
-  { text: "Only those who will risk going too far can possibly find out how far one can go.", author: "T.S. Eliot" },
-  { text: "I find that the harder I work, the more luck I seem to have.", author: "Thomas Jefferson" },
-  { text: "You miss 100% of the shots you don't take.", author: "Wayne Gretzky" },
-  { text: "Do not wait to strike till the iron is hot; but make it hot by striking.", author: "William Butler Yeats" },
-  { text: "Knowledge speaks, but wisdom listens.", author: "Jimi Hendrix" },
-];
+void main() {
+  vec2 uv = gl_FragCoord.xy / u_res;
+  float aspect = u_res.x / max(u_res.y, 1.0);
+  vec2 p = (uv - 0.5) * vec2(aspect, 1.0);
+  float t = u_time * (0.15 * u_speed);
 
-function DataMatrix() {
-  const canvasRef = ml.useRef(null);
+  vec2 mouse = (u_mouse - 0.5) * vec2(aspect, 1.0);
+  float dMouse = length(p - mouse);
+  p += (mouse - p) * 0.02 * u_mouseInfluence * smoothstep(0.45, 0.0, dMouse);
 
-  ml.useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    
-    let width, height, columns;
-    const fontSize = 14;
-    let drops = [];
+  vec2 flow = vec2(
+    fbm(p + vec2(t * 0.2, t * 0.1), u_turbulence),
+    fbm(p + vec2(-t * 0.1, t * 0.3), u_turbulence)
+  );
 
-    const initCanvas = () => {
-      if (!canvas.parentElement) return;
-      width = canvas.parentElement.offsetWidth;
-      height = canvas.parentElement.offsetHeight;
-      canvas.width = width;
-      canvas.height = height;
-      columns = Math.ceil(width / fontSize);
-      drops = [];
-      for (let x = 0; x < columns; x++) {
-        drops[x] = (height + Math.random() * 200) / fontSize;
-      }
-    };
+  float n = fbm(p * 2.0 + flow * 1.45, u_turbulence);
+  float ridges = 1.0 - abs(snoise(p * 4.0 + n) * 2.0);
+  ridges = pow(ridges, 3.0);
 
-    initCanvas();
-    const observer = new ResizeObserver(initCanvas);
-    if (canvas.parentElement) {
-      observer.observe(canvas.parentElement);
-    }
+  vec3 colorA = mix(u_lightA, u_darkA, u_isDark);
+  vec3 colorB = mix(u_lightB, u_darkB, u_isDark);
+  vec3 colorC = mix(u_lightC, u_darkC, u_isDark);
 
-    const draw = () => {
-      ctx.fillStyle = 'rgba(2, 5, 13, 0.15)';
-      ctx.fillRect(0, 0, width, height);
+  vec3 col = mix(colorA, colorB, smoothstep(-0.5, 0.5, n));
+  col = mix(col, colorC, smoothstep(0.25, 1.0, n * 0.52 + ridges * 0.48));
 
-      ctx.fillStyle = '#19e6ff';
-      ctx.font = fontSize + 'px Orbitron, monospace';
-      ctx.textAlign = 'center';
+  float sparkle = pow(max(0.0, snoise(gl_FragCoord.xy * 0.2 + t * 2.0)), 18.0) * 0.5 * u_sparkle;
+  vec3 sparkleColor = mix(vec3(0.56, 0.58, 0.72), vec3(0.8, 0.9, 1.0), u_isDark);
+  col += sparkleColor * sparkle;
 
-      for (let i = 0; i < drops.length; i++) {
-        const text = Math.floor(Math.random() * 10).toString();
-        const x = i * fontSize + fontSize / 2;
-        const y = drops[i] * fontSize;
+  float vigDark = 1.0 - smoothstep(0.5, mix(1.8, 1.55, u_isDark), length(p));
+  col = mix(col, col * vigDark, u_isDark * u_vignette);
+  float vigLight = 1.0 - smoothstep(0.4, 1.45, length(p));
+  col = mix(mix(vec3(1.0), col, vigLight), col, u_isDark);
 
-        let renderX = x;
-        if (Math.random() > 0.98) {
-           renderX += (Math.random() > 0.5 ? 1 : -1) * fontSize;
-        }
+  float grain = (fract(sin(dot(gl_FragCoord.xy + t * 50.0, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * (0.06 * u_grain);
+  col += grain;
 
-        ctx.fillText(text, renderX, y);
-        drops[i]--;
-
-        if (drops[i] * fontSize < 0 && Math.random() > 0.95) {
-          drops[i] = (height + Math.random() * 200) / fontSize;
-        }
-      }
-    };
-
-    const interval = setInterval(draw, 50);
-
-    return () => {
-      clearInterval(interval);
-      observer.disconnect();
-    };
-  }, []);
-
-  return s.jsx("canvas", {
-    ref: canvasRef,
-    style: {
-      position: "absolute",
-      top: 0,
-      left: 0,
-      width: "100%",
-      height: "100%",
-      opacity: 0.35,
-      pointerEvents: "none",
-      zIndex: 0
-    }
-  });
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0), u_opacity);
 }
-
-function QuoteOfTheDay() {
-  const [quoteIndex, setQuoteIndex] = ml.useState(() => Math.floor(Math.random() * quotes.length));
-  const [fading, setFading] = ml.useState(false);
-
-  const newQuote = () => {
-    if (fading) return;
-    setFading(true);
-    setTimeout(() => {
-      setQuoteIndex(Math.floor(Math.random() * quotes.length));
-      setFading(false);
-    }, 400);
-  };
-
-  const currentQuote = quotes[quoteIndex];
-
-  return s.jsxs("section", {
-    className: "module",
-    children: [
-      s.jsxs("div", {
-        className: "section-head",
-        children: [
-          s.jsxs("div", {
-            children: [
-              s.jsx("div", { className: "kicker", children: "Inspiration Module" }),
-              s.jsx("h2", { className: "module-title", children: "Quote of the Day" })
-            ]
-          }),
-          s.jsx("span", { className: "badge purple", children: "Intel" })
-        ]
-      }),
-      s.jsxs("div", {
-        style: {
-          padding: "20px",
-          background: "linear-gradient(135deg, rgba(7, 19, 35, 0.9), rgba(3, 7, 18, 0.9))",
-          border: "1px solid rgba(25, 230, 255, 0.3)",
-          borderRadius: "12px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "16px",
-          position: "relative",
-          overflow: "hidden"
-        },
-        children: [
-          s.jsxs("div", {
-            style: {
-              opacity: fading ? 0 : 1,
-              transition: "opacity 0.4s ease-in-out",
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px"
-            },
-            children: [
-              s.jsx("div", {
-                style: {
-                  color: "#19e6ff",
-                  fontSize: "32px",
-                  lineHeight: "1",
-                  fontFamily: "serif",
-                  opacity: 0.6,
-                  textShadow: "0 0 10px #19e6ff4d"
-                },
-                children: "“"
-              }),
-              s.jsx("div", {
-                style: {
-                  color: "#e2e8f0",
-                  fontSize: "15px",
-                  lineHeight: "1.6",
-                  fontWeight: "500",
-                  fontStyle: "italic",
-                  textShadow: "0 2px 4px rgba(0,0,0,0.5)"
-                },
-                children: currentQuote.text
-              }),
-              s.jsx("div", {
-                style: {
-                  color: "#19e6ff",
-                  fontSize: "12px",
-                  fontWeight: "700",
-                  textTransform: "uppercase",
-                  letterSpacing: "1px",
-                  textAlign: "right",
-                  marginTop: "8px"
-                },
-                children: `— ${currentQuote.author}`
-              })
-            ]
-          }),
-          s.jsx("button", {
-            onClick: newQuote, className: "btn purple",
-            style: {
-              alignSelf: "flex-end",
-              marginTop: "8px",
-              padding: "8px 16px"
-            },
-            children: "NEW QUOTE"
-          })
-        ]
-      })
-    ]
-  });
+`;
+const HEX_COLOR_REGEX = /^#?[0-9a-fA-F]{6}$/;
+function sanitizeHexColor(value, fallback) {
+  const trimmed = value.trim();
+  if (!HEX_COLOR_REGEX.test(trimmed)) {
+    return fallback;
+  }
+  return trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
 }
-
-const milestones = [50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600];
-
-function MemberRoadmap({ currentMembers }) {
-  const members = typeof currentMembers === "number" && !isNaN(currentMembers) 
-    ? currentMembers 
-    : parseInt((String(currentMembers) || "0").replace(/,/g, ""), 10) || 0;
-
-  return s.jsxs("section", {
-    className: "module",
-    children: [
-      s.jsxs("div", {
-        className: "section-head",
-        children: [
-          s.jsxs("div", {
-            children: [
-              s.jsx("div", { className: "kicker", children: "Expansion Module" }),
-              s.jsx("h2", { className: "module-title", children: "Member Roadmap" })
-            ]
-          }),
-          s.jsx("span", { className: "badge purple", children: "Goals" })
-        ]
-      }),
-      s.jsx("div", {
-        className: "scroll-zone",
-        style: {
-          background: "linear-gradient(135deg, rgba(7, 19, 35, 0.9), rgba(3, 7, 18, 0.9))",
-          border: "1px solid rgba(25, 230, 255, 0.3)",
-          borderRadius: "12px",
-          padding: "24px 20px 32px 20px",
-          display: "block",
-          position: "relative"
-        },
-        children: s.jsxs("div", {
-          style: {
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "space-between",
-            position: "relative",
-            minHeight: "max-content",
-            padding: "10px 0"
-          },
-          children: [
-            s.jsx("div", {
-              style: {
-                position: "absolute",
-                top: "20px",
-                bottom: "20px",
-                left: "50%",
-                transform: "translateX(-50%)",
-                width: "2px",
-                background: "rgba(25, 230, 255, 0.15)",
-                zIndex: 1
-              }
-            }),
-            s.jsx("div", {
-              style: {
-                position: "absolute",
-                top: "20px",
-                left: "50%",
-                transform: "translateX(-50%)",
-                width: "2px",
-                background: "#19e6ff",
-                boxShadow: "0 0 10px #19e6ff",
-                zIndex: 1,
-                height: (() => {
-                  if (members >= milestones[milestones.length - 1]) return "calc(100% - 40px)";
-                  let activeIdx = milestones.findIndex(m => members < m);
-                  if (activeIdx === 0) return "0%";
-                  const prev = milestones[activeIdx - 1];
-                  const next = milestones[activeIdx];
-                  const progress = Math.max(0, (members - prev) / (next - prev));
-                  const fraction = (activeIdx - 1 + progress) / (milestones.length - 1);
-                  return `calc(${fraction * 100}% - ${fraction * 40}px)`;
-                })(),
-                transition: "height 1s ease-out"
-              }
-            }),
-            ...milestones.map((ms, idx) => {
-              const isCompleted = members >= ms;
-              const isCurrent = !isCompleted && (idx === 0 || members >= milestones[idx - 1]);
-              const color = isCompleted ? "#19e6ff" : isCurrent ? "#7df7ff" : "rgba(25, 230, 255, 0.15)";
-              const shadow = isCompleted ? "0 0 10px #19e6ff" : isCurrent ? "0 0 20px #7df7ff, 0 0 10px #19e6ff" : "none";
-              const size = isCurrent ? "14px" : "10px";
-
-              return s.jsxs("div", {
-                style: {
-                  position: "relative",
-                  zIndex: 2,
-                  display: "flex",
-                  flexDirection: "row",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  marginBottom: idx === milestones.length - 1 ? "0" : "40px",
-                  width: "100%"
-                },
-                key: ms,
-                children: [
-                  s.jsx("div", {
-                    style: {
-                      width: size,
-                      height: size,
-                      borderRadius: "50%",
-                      background: isCurrent ? "#fff" : color,
-                      boxShadow: shadow,
-                      transition: "all 0.3s ease",
-                      border: isCompleted ? "none" : isCurrent ? "2px solid #7df7ff" : "2px solid rgba(25, 230, 255, 0.3)",
-                      flexShrink: 0
-                    }
-                  }),
-                  s.jsx("div", {
-                    style: {
-                      position: "absolute",
-                      left: "calc(50% + 20px)",
-                      color: isCompleted || isCurrent ? "#e2e8f0" : "rgba(255,255,255,0.4)",
-                      fontSize: "13px",
-                      fontWeight: isCurrent ? "bold" : "normal",
-                      fontFamily: "Orbitron, sans-serif"
-                    },
-                    children: ms
-                  })
-                ]
-              });
-            })
-          ]
-        })
-      })
-    ]
-  });
+function hexToRgb01(hex, fallback) {
+  const normalized = sanitizeHexColor(hex, fallback).replace("#", "");
+  const r = parseInt(normalized.slice(0, 2), 16) / 255;
+  const g = parseInt(normalized.slice(2, 4), 16) / 255;
+  const b = parseInt(normalized.slice(4, 6), 16) / 255;
+  return [r, g, b];
 }
+const DARK_A = "#0d0d14";
+const DARK_B = "#1f2540";
+const DARK_C = "#4a6191";
+const LIGHT_A = "#f0f2f7";
+const LIGHT_B = "#d7dceb";
+const LIGHT_C = "#bcc5e0";
 
-function TopOperativesLeaderboard() {
-  const [leaderboard, setLeaderboard] = ml.useState([]);
-  const [loading, setLoading] = ml.useState(true);
-
-  ml.useEffect(() => {
-    let active = true;
-    async function fetchTopOps() {
-      try {
-        const cached = localStorage.getItem("codex_top_ops");
-        if (cached) {
-          const { data, timestamp } = JSON.parse(cached);
-          if (Date.now() - timestamp < 1000 * 60 * 60 * 24) {
-            setLeaderboard(data);
-            setLoading(false);
-            return;
-          }
-        }
-        const memRes = await fetch(`https://api.chess.com/pub/club/${Tf}/members`);
-        if (!memRes.ok) return;
-        const membersData = await memRes.json();
-        const allUsers = [...(membersData.weekly || []), ...(membersData.monthly || []), ...(membersData.all_time || [])].map(u => u.username);
-        
-        const uniqueUsers = [...new Set(allUsers)];
-        
-        const results = [];
-        for (let i = 0; i < uniqueUsers.length; i += 10) {
-          if (!active) return;
-          const chunk = uniqueUsers.slice(i, i + 10);
-          const chunkRes = await Promise.all(chunk.map(async (user) => {
-            try {
-              const res = await fetch(`https://api.chess.com/pub/player/${user.toLowerCase()}/stats`);
-              if (!res.ok) return null;
-              const data = await res.json();
-              const rapid = data.chess_rapid?.last?.rating || 0;
-              return { username: user, rating: rapid || "N/A" };
-            } catch (e) {
-              return null;
-            }
-          }));
-          results.push(...chunkRes.filter(Boolean));
-        }
-        
-        const sorted = results.filter(r => r.rating !== "N/A").sort((a, b) => b.rating - a.rating);
-        const top4 = sorted.slice(0, 4);
-        if (active) {
-          setLeaderboard(top4);
-          setLoading(false);
-          localStorage.setItem("codex_top_ops", JSON.stringify({ data: top4, timestamp: Date.now() }));
-        }
-      } catch (e) {
-        if (active) setLoading(false);
-      }
-    }
-    fetchTopOps();
-    return () => { active = false; };
-  }, []);
-
-  return s.jsxs("section", {
-    className: "module",
-    children: [
-      s.jsxs("div", {
-        className: "section-head",
-        children: [
-          s.jsxs("div", {
-            children: [
-              s.jsx("div", { className: "kicker", children: "Elite Module" }),
-              s.jsx("h2", { className: "module-title", children: "Top Operatives Leaderboard" })
-            ]
-          }),
-          s.jsx("span", { className: "badge green", children: "Top 4" })
-        ]
-      }),
-      s.jsx("div", {
-        className: "card-list",
-        children: loading 
-          ? s.jsx("div", { className: "micro text-center py-4 text-slate-400 border border-slate-800/40 rounded-xl bg-slate-950/20", children: "Fetching operative intel..." })
-          : leaderboard.map((op, i) => s.jsxs("div", {
-              className: "member-card",
-              children: [
-                s.jsxs("div", {
-                  style: { display: "flex", alignItems: "center", gap: "12px" },
-                  children: [
-                    s.jsx("div", {
-                      style: { 
-                        color: i === 0 ? "#FFD700" : i === 1 ? "#C0C0C0" : i === 2 ? "#CD7F32" : "#8bb6d1",
-                        fontWeight: "bold",
-                        width: "24px",
-                        textAlign: "center",
-                        fontFamily: "Orbitron, sans-serif"
-                      },
-                      children: `#${i + 1}`
-                    }),
-                    s.jsx("div", {
-                      className: "avatar",
-                      children: Cr(op.username),
-                    }),
-                    s.jsx("a", { 
-                      className: "name", 
-                      href: `https://www.chess.com/member/${op.username}`,
-                      target: "_blank",
-                      rel: "noopener noreferrer",
-                      style: { textDecoration: "none" },
-                      children: op.username 
-                    })
-                  ]
-                }),
-                s.jsxs("div", { 
-                  className: "badge blue", 
-                  style: { display: "flex", alignItems: "center", gap: "4px" },
-                  children: [
-                    s.jsx("span", { style: { fontSize: "10px", opacity: 0.7 }, children: "Rapid Rating" }),
-                    op.rating 
-                  ] 
-                })
-              ]
-            }, op.username))
-      })
-    ]
-  });
-}
-
-function PuzzleOfTheDay() {
-  return s.jsxs("section", {
-    className: "module",
-    children: [
-      s.jsxs("div", {
-        className: "section-head",
-        children: [
-          s.jsxs("div", {
-            children: [
-              s.jsx("div", { className: "kicker", children: "Training Module" }),
-              s.jsx("h2", { className: "module-title", children: "Puzzle of the Day" })
-            ]
-          }),
-          s.jsx("span", { className: "badge green", children: "Tactics" })
-        ]
-      }),
-      s.jsx("div", {
-        style: {
-          background: "linear-gradient(135deg, rgba(7, 19, 35, 0.9), rgba(3, 7, 18, 0.9))",
-          border: "1px solid rgba(25, 230, 255, 0.3)",
-          borderRadius: "12px",
-          display: "flex",
-          justifyContent: "center",
-          overflow: "hidden"
-        },
-        children: s.jsx("iframe", {
-          src: "https://lichess.org/training/frame?theme=brown&bg=dark",
-          style: { width: "100%", maxWidth: "400px", aspectRatio: "10/11" },
-          allowTransparency: "true",
-          frameBorder: "0"
-        })
-      })
-    ]
-  });
-}
+const MatrixRain = ml.lazy(() => import('./MatrixRain.js'));
+const QuoteOfTheDay = ml.lazy(() => import('./QuoteOfTheDay.js'));
+const MemberRoadmap = ml.lazy(() => import('./MemberRoadmap.js'));
+const TopOperativesLeaderboard = ml.lazy(() => import('./TopOperativesLeaderboard.js'));
+const PuzzleOfTheDay = ml.lazy(() => import('./PuzzleOfTheDay.js'));
+const ClosingPlasma = ml.lazy(() => import('./ClosingPlasma.js'));
+const YouTubeMusicPlayer = ml.lazy(() => import('./YouTubeMusicPlayer.js'));
 
 function vm() {
   const [A, L] = ml.useState("00:00:00"),
@@ -14501,10 +13834,12 @@ function vm() {
   return s.jsxs(s.Fragment, {
     children: [
       !_ && s.jsx(rm, { onInitialize: () => O(!0) }),
-      s.jsx("div", {
+      s.jsxs("div", {
         className:
-          "w-full flex justify-center bg-[#030712] select-none",
-        children: s.jsxs("div", {
+          "w-full min-h-screen flex justify-center py-4 bg-transparent select-none relative",
+        children: [
+          s.jsxs("div", { className: "heat-reactor", children: [s.jsx("div", { className: "heat-reactor-1" }), s.jsx("div", { className: "heat-reactor-2" }), s.jsx("div", { className: "heat-reactor-3" })] }),
+          s.jsxs("div", {
           className: "codex-shell",
           id: "codexApp",
           ref: S,
@@ -14514,7 +13849,7 @@ function vm() {
             s.jsxs("section", {
               className: "module hero",
               children: [
-                s.jsx(DataMatrix, {}),
+                s.jsx(MatrixRain, { variant: "cyan" }),
                 s.jsxs("div", {
                   className: "hero-clock",
                   children: [
@@ -14568,7 +13903,7 @@ function vm() {
                       className: "hero-row",
                       children: [
                         s.jsx("a", {
-                          className: "btn purple", href: "https://docs.google.com/forms/d/e/1FAIpQLSfxu0EflVD-NL5dhbpETAbwsJnKEb_3bUwpYvBejHQe2XH-tA/viewform",
+                          className: "btn orange", href: "https://docs.google.com/forms/d/e/1FAIpQLSfxu0EflVD-NL5dhbpETAbwsJnKEb_3bUwpYvBejHQe2XH-tA/viewform",
                           target: "_blank",
                           rel: "noopener noreferrer",
                           children: "Join Command",
@@ -14930,7 +14265,7 @@ function vm() {
                                   ],
                                 }),
                                 s.jsx("a", {
-                                  className: "btn purple", href: g.url,
+                                  className: "btn orange", href: g.url,
                                   target: "_blank",
                                   rel: "noopener noreferrer",
                                   children: "Open Live",
@@ -14991,7 +14326,7 @@ function vm() {
                                   ],
                                 }),
                                 s.jsx("a", {
-                                  className: "btn purple", href: g.url,
+                                  className: "btn orange", href: g.url,
                                   target: "_blank",
                                   rel: "noopener noreferrer",
                                   children: "View Event",
@@ -15072,7 +14407,7 @@ function vm() {
                       ],
                     }),
                     s.jsx("span", {
-                      className: "badge purple",
+                      className: "badge",
                       children: "Elite",
                     }),
                   ],
@@ -15243,7 +14578,7 @@ function vm() {
                     fontFamily: "var(--font-mono)",
                     textTransform: "uppercase"
                   },
-                  children: "sidebar version 5.0.0"
+                  children: "sidebar version 6.0.0"
                 }),
                 s.jsxs("div", {
                   className: "footer-content",
@@ -15280,41 +14615,52 @@ function vm() {
                       children: "ONLINE // HUD VERIFIED",
                     }),
                   ],
-                }),
-                s.jsx("div", {
-                  className: "footer-sub",
-                  children:
-                    "CLUB PORTAL SYSTEM v4.95 // LIVE OPERATION NODES SECURED",
-                }),
+                })
               ],
             }),
           ],
         }),
-      }),
+      ]}),
     ],
   });
 }
 om.createRoot(document.getElementById("root")).render(
-  s.jsx(ml.StrictMode, { children: s.jsx(vm, {}) }),
+  s.jsx(ml.StrictMode, { children: s.jsx(ml.Suspense, { fallback: s.jsx("div", { style: { color: "white", padding: "20px", textAlign: "center" }, children: "INITIALIZING MODULES..." }), children: s.jsx(vm, {}) }) }),
 );
 
 
-// 3D Tilt Effect
-document.addEventListener('mousemove', (e) => {
+// 3D Tilt Effect Optimized
+let tiltTicking = false;
+let tiltEvent = null;
+
+function applyTilt() {
+  if (!tiltEvent) return;
+  const e = tiltEvent;
   const card = e.target.closest('.module, .clock-card, .stat-card, .member-card, .champion, .role-card, .partner-card, .title-card');
-  if (!card) return;
-  const r = card.getBoundingClientRect();
-  const x = (e.clientX - r.left) / r.width - 0.5;
-  const y = (e.clientY - r.top) / r.height - 0.5;
-  card.style.transform = 'perspective(900px) rotateY(' + (x * 12) + 'deg) rotateX(' + (-y * 12) + 'deg) translateZ(8px)';
-  card.style.transition = 'box-shadow 0.3s, border-color 1.2s, transform 0.1s ease-out';
-  card.style.transformStyle = 'preserve-3d';
-  
-  if (!card.dataset.tiltInit) {
-    card.dataset.tiltInit = 'true';
-    card.addEventListener('mouseleave', () => {
-      card.style.transform = 'perspective(900px) rotateY(0deg) rotateX(0deg) translateZ(0px)';
-      card.style.transition = 'box-shadow 0.3s, border-color 1.2s, transform 0.3s ease-out';
-    });
+  if (card) {
+    const r = card.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - 0.5;
+    const y = (e.clientY - r.top) / r.height - 0.5;
+    card.style.transform = 'perspective(900px) rotateY(' + (x * 12) + 'deg) rotateX(' + (-y * 12) + 'deg) translateZ(8px)';
+    card.style.transition = 'box-shadow 0.3s, border-color 1.2s, transform 0.1s ease-out';
+    card.style.transformStyle = 'preserve-3d';
+    
+    if (!card.dataset.tiltInit) {
+      card.dataset.tiltInit = 'true';
+      card.addEventListener('mouseleave', () => {
+        card.style.transform = 'perspective(900px) rotateY(0deg) rotateX(0deg) translateZ(0px)';
+        card.style.transition = 'box-shadow 0.3s, border-color 1.2s, transform 0.3s ease-out';
+      }, { passive: true });
+    }
   }
-});
+  tiltTicking = false;
+}
+
+document.addEventListener('mousemove', (e) => {
+  tiltEvent = e;
+  if (!tiltTicking) {
+    requestAnimationFrame(applyTilt);
+    tiltTicking = true;
+  }
+}, { passive: true });
+export { s, ml };

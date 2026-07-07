@@ -1,0 +1,129 @@
+import { s, ml } from './script.js';
+
+function MatrixRain({
+    className,
+    variant = "default",
+    width,
+    height,
+    fontSize = 16,
+    speed = 50,
+    fixedColor,
+}) {
+    const canvasRef = ml.useRef(null)
+
+    ml.useEffect(() => {
+        const canvas = canvasRef.current
+        if (!canvas) return
+
+        const ctx = canvas.getContext("2d")
+        if (!ctx) return
+
+        // If specific dimensions are provided, use them. Otherwise observe parent.
+        const resizeObserver = new ResizeObserver(() => {
+            if (!width && !height) {
+                canvas.width = canvas.offsetWidth
+                canvas.height = canvas.offsetHeight
+            }
+        })
+        resizeObserver.observe(canvas)
+
+        // Initial size setup
+        if (width) canvas.width = width
+        if (height) canvas.height = height
+        if (!width && !height) {
+            canvas.width = canvas.offsetWidth
+            canvas.height = canvas.offsetHeight
+        }
+
+        const w = canvas.width
+        const h = canvas.height
+
+        // Columns config
+        const columns = Math.floor(w / fontSize)
+        const drops = new Array(columns).fill(1)
+
+        // Character set: Katakana + Numbers
+        const chars = "0123456789"
+
+        let isDark = true;
+
+        // Set default background based on theme immediately to avoid delay
+        const bg = isDark ? "#000000" : "#ffffff"
+
+        ctx.fillStyle = bg
+        ctx.fillRect(0, 0, w, h)
+
+        let isVisible = true;
+        const io = new IntersectionObserver(entries => {
+            isVisible = entries[0].isIntersecting;
+        });
+        io.observe(canvas);
+
+        const draw = () => {
+            if (!isVisible) return;
+            // Check theme state on every frame
+            const currentIsDark = true;
+
+            // If theme changed, reset the background immediately
+            if (currentIsDark !== isDark) {
+                isDark = currentIsDark
+                ctx.fillStyle = isDark ? "#000000" : "#ffffff"
+                ctx.fillRect(0, 0, canvas.width, canvas.height)
+            }
+
+            // Semi-transparent color for trail effect
+            // Use black for dark mode, white for light mode
+            ctx.fillStyle = isDark ? "rgba(0, 0, 0, 0.05)" : "rgba(255, 255, 255, 0.05)"
+            ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+            ctx.font = `${fontSize}px monospace`
+
+            for (let i = 0; i < drops.length; i++) {
+                const text = chars[Math.floor(Math.random() * chars.length)] || ""
+
+                // Color selection
+                if (variant === "rainbow" && !fixedColor) {
+                    const hue = (Date.now() / 20 + i * 10) % 360
+                    ctx.fillStyle = `hsl(${hue}, 100%, 50%)`
+                } else if (fixedColor) {
+                    ctx.fillStyle = fixedColor
+                } else {
+                    // Adaptive colors based on background
+                    if (variant === "cyan") {
+                        ctx.fillStyle = "#ff6a1a" // Orange
+                    } else {
+                        // Default to green
+                        ctx.fillStyle = "#ff6a1a"
+                    }
+                }
+
+                const x = i * fontSize
+                const y = drops[i] * fontSize
+
+                ctx.fillText(text, x, y)
+
+                if (y > canvas.height && Math.random() > 0.975) {
+                    drops[i] = 0
+                }
+
+                drops[i]++
+            }
+        }
+
+        const interval = setInterval(draw, speed)
+
+        return () => {
+            clearInterval(interval)
+            resizeObserver.disconnect();
+            io.disconnect();
+        }
+    }, [variant, fontSize, speed, fixedColor, width, height])
+
+    return s.jsx("canvas", {
+        ref: canvasRef,
+        className: className || "size-full bg-background block rounded-[inherit]",
+        style: { width: width ? `${width}px` : "100%", height: height ? `${height}px` : "100%", display: 'block', borderRadius: 'inherit', position: 'absolute', inset: 0, opacity: 1, zIndex: 0 }
+    })
+}
+
+export default MatrixRain;
