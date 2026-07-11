@@ -1,0 +1,161 @@
+        children: [
+          s.jsxs("div", { className: "heat-reactor", children: [s.jsx("div", { className: "heat-reactor-1" }), s.jsx("div", { className: "heat-reactor-2" }), s.jsx("div", { className: "heat-reactor-3" })] }),
+          s.jsxs("div", {
+          className: "codex-shell",
+          id: "codexApp",
+          ref: S,
+          onPointerMove: G,
+          onPointerLeave: nl,
+          children: [
+            s.jsxs("section", {
+              className: "module hero",
+              children: [
+                s.jsx(MatrixRain, { variant: "cyan" }),
+                s.jsxs("div", {
+                  className: "hero-clock",
+                  children: [
+                    s.jsxs("div", {
+                      className: "clock-card",
+                      children: [
+                        s.jsx("span", {
+                          className: "timezone",
+                          children: "UTC",
+                        }),
+                        s.jsx("span", {
+                          className: "value",
+                          id: "utcClock",
+                          dangerouslySetInnerHTML: { __html: "00:00:00" }
+                        }),
+                      ],
+                    }),
+                    s.jsxs("div", {
+                      className: "clock-card",
+                      children: [
+                        s.jsx("span", {
+                          className: "timezone",
+                          children: "IST",
+                        }),
+                        s.jsx("span", {
+                          className: "value",
+                          id: "istClock",
+                          dangerouslySetInnerHTML: { __html: "00:00:00" }
+                        }),
+                      ],
+                    }),
+                  ],
+                }),
+                s.jsxs("div", {
+                  className: "hero-content",
+                  children: [
+                    s.jsx("div", {
+                      className: "hero-mark",
+                      children: s.jsx("span", { children: "♛" }),
+                    }),
+                    s.jsx("div", {
+                      className: "kicker",
+                      children: "Futuristic Chess Command Center",
+                    }),
+                    s.jsx("h1", { children: "THE CODEX" }),
+                    s.jsx("p", {
+                      children:
+                        "Elite operators. Tactical trials. Inferno discipline. Enter the underground command system built for serious chess warfare.",
+                    }),
+                    s.jsxs("div", {
+                      className: "hero-row",
+                      children: [
+                        s.jsx("a", {
+                          className: "btn orange", href: "https://docs.google.com/forms/d/e/1FAIpQLSfxu0EflVD-NL5dhbpETAbwsJnKEb_3bUwpYvBejHQe2XH-tA/viewform",
+                          target: "_blank",
+                          rel: "noopener noreferrer",
+                          children: "Join Command",
+                        }),
+                        s.jsx("span", {
+                          className: "chip",
+                          children: "Live Ops",
+                        }),
+                        s.jsx("span", {
+                          className: "chip",
+                          children: "Trial Ready",
+                        }),
+                      ],
+                    }),
+                  ],
+                }),
+              ],
+            }),
+            s.jsxs("section", {
+              className: "module",
+              children: [
+                s.jsxs("div", {
+                  className: "section-head",
+                  children: [
+                    s.jsxs("div", {
+                      children: [
+                        s.jsx("div", {
+                          className: "kicker",
+                          children: "Club Creation Date",
+                        }),
+                        s.jsx("h2", {
+                          children: "19-April-2026",
+                        }),
+                      ],
+                    }),
+                  ],
+                }),
+              ],
+            }),
+            s.jsx(QuoteOfTheDay, {}),
+            s.jsxs("section", {
+              className: "module",
+              children: [
+                s.jsxs("div", {
+                  className: "section-head",
+                  children: [
+                    s.jsxs("div", {
+                      children: [
+                        s.jsx("div", {
+                          className: "kicker",
+                          children: "Member Count Module",
+                        }),
+                        s.jsx("h2", {
+                          className: "module-title",
+                          children: "Operative Network",
+                        }),
+                      ],
+                    }),
+                    s.jsx("span", {
+                      className: "status-dot",
+                      id: "memberSync",
+                      children: C,
+                    }),
+                  ],
+                }),
+                s.jsxs("div", {
+                  className: "stat-card",
+                  children: [
+                    s.jsxs("div", {
+                      children: [
+                        s.jsx("div", {
+                          className: `big-number ${tl ? "loading" : ""}`,
+                          id: "memberCount",
+                          children: H,
+                        }),
+                        s.jsx("div", {
+                          className: "micro",
+                          id: "memberMeta",
+                          children: pl,
+                        }),
+                      ],
+                    }),
+                    s.jsx("div", {
+                      className: "ring",
+                      children: s.jsx("span", {}),
+                    }),
+                  ],
+                }),
+              ],
+            }),
+            s.jsx(MemberRoadmap, { currentMembers: H }),
+            s.jsxs("section", {
+              className: "module",
+              children: [

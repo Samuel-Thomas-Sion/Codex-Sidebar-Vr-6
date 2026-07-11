@@ -12944,7 +12944,7 @@ function rm({ onInitialize: A }) {
     style: {
       position: "fixed",
       inset: 0,
-      background: "#02050b",
+      background: "#000",
       overflow: "hidden",
       fontFamily: "Arial, sans-serif",
       zIndex: 9999,
@@ -12976,7 +12976,7 @@ function rm({ onInitialize: A }) {
           left: 0,
           width: "50%",
           height: "100%",
-          background: "linear-gradient(135deg, #0f0505, #240b0b)",
+          background: "#000",
           borderRight: "1px solid rgba(255,50,0,0.18)",
           transition: "1.5s cubic-bezier(.77,0,.18,1)",
           transform: L ? "translateX(-100%)" : "translateX(0)",
@@ -12992,7 +12992,7 @@ function rm({ onInitialize: A }) {
           right: 0,
           width: "50%",
           height: "100%",
-          background: "linear-gradient(225deg, #0f0505, #240b0b)",
+          background: "#000",
           borderLeft: "1px solid rgba(255,50,0,0.18)",
           transition: "1.5s cubic-bezier(.77,0,.18,1)",
           transform: L ? "translateX(100%)" : "translateX(0)",
@@ -13836,7 +13836,7 @@ function vm() {
       !_ && s.jsx(rm, { onInitialize: () => O(!0) }),
       s.jsxs("div", {
         className:
-          "w-full min-h-screen flex justify-center py-4 bg-transparent select-none relative",
+          "w-full min-h-screen flex justify-center  py-4 bg-transparent select-none relative",
         children: [
           s.jsxs("div", { className: "heat-reactor", children: [s.jsx("div", { className: "heat-reactor-1" }), s.jsx("div", { className: "heat-reactor-2" }), s.jsx("div", { className: "heat-reactor-3" })] }),
           s.jsxs("div", {
